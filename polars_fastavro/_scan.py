@@ -14,7 +14,11 @@ R = TypeVar("R")
 
 def unwrap_nullable(schema: object) -> object:
     match schema:
-        case ["null", object() as other] | [object() as other, "null"]:
+        case (
+            ["null", object() as other]
+            | [object() as other, "null"]
+            | [object() as other]
+        ):
             return other
         case _:
             return schema
@@ -23,6 +27,7 @@ def unwrap_nullable(schema: object) -> object:
 @dataclass(frozen=True)
 class DataTypeParser:
     parse_logical_types: bool
+    single_col_name: str | None
 
     def parse_dtype(self, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912
         match unwrap_nullable(dtype):
@@ -80,7 +85,7 @@ class DataTypeParser:
             case unwrapped:
                 raise NotImplementedError(f"unhandled datatype: {unwrapped}")
 
-    def parse_schema(self, schema: object) -> pl.Schema:
+    def parse_schema(self, schema: object) -> tuple[pl.Schema, bool]:
         match schema:
             case {"type": "record", "fields": [*_] as fields}:  # type: ignore
                 parsed: list[tuple[str, pl.DataType]] = []
@@ -90,7 +95,10 @@ class DataTypeParser:
                             parsed.append((name, self.parse_dtype(dtype)))
                         case _:  # pragma: no cover
                             raise RuntimeError(f"invalid field definition: {field}")
-                return pl.Schema(parsed)
+                return pl.Schema(parsed), False
+            case _ if self.single_col_name is not None:
+                col_dtype = self.parse_dtype(schema)
+                return pl.Schema([(self.single_col_name, col_dtype)]), True
             case _:
                 raise NotImplementedError(
                     f"top-level schema must be a record schema: {schema}"
@@ -125,28 +133,32 @@ def iter_readers(
     *,
     glob: bool,
     parse_logical_types: bool,
-) -> tuple[pl.Schema, Iterator[Iterable[object]]]:
+    single_col_name: str | None,
+) -> tuple[pl.Schema, bool, Iterator[Iterable[object]]]:
     source_iter = open_sources(sources, glob)
     if (first := next(source_iter, None)) is None:
         raise ValueError("sources were empty")
 
-    parser = DataTypeParser(parse_logical_types=parse_logical_types)
+    parser = DataTypeParser(
+        parse_logical_types=parse_logical_types, single_col_name=single_col_name
+    )
 
     reader = fastavro.reader(first)
-    schema = parser.parse_schema(reader.writer_schema)
+    schema, singleton = parser.parse_schema(reader.writer_schema)
 
     def rest() -> Iterator[Iterable[object]]:
         yield reader
         for i, fo in enumerate(source_iter, 1):
             next_reader = fastavro.reader(fo)
-            if parser.parse_schema(next_reader.writer_schema) == schema:
+            new_schema, new_single = parser.parse_schema(next_reader.writer_schema)
+            if new_schema == schema and singleton == new_single:
                 yield next_reader
             else:
                 raise RuntimeError(
                     f"schema of source {i:d} didn't match schema of source 0\n{next_reader.writer_schema} != {schema}"
                 )
 
-    return schema, rest()
+    return schema, singleton, rest()
 
 
 def chunk(it: Iterable[R], chunk_size: int) -> Iterator[list[R]]:
@@ -167,6 +179,7 @@ def scan_avro(
     convert_logical_types: bool = False,
     batch_size: int = 32768,
     glob: bool = True,
+    single_col_name: str | None = None,
 ) -> pl.LazyFrame:
     """Scan Avro files.
 
@@ -178,14 +191,17 @@ def scan_avro(
         instead.
     batch_size : How many rows to attempt to read at a time.
     glob : If true, expand path sources with glob patterns.
+    single_col_name : If not None and the avro schema isn't a record, wrap
+        values in a record with a single field called `single_col_name`.
     """
     def_batch_size = batch_size
 
     schema: pl.Schema | None = None
+    singleton: bool | None = None
     opened_readers: Iterator[Iterable[object]] | None = None
 
     def get_schema() -> pl.Schema:
-        nonlocal schema, opened_readers
+        nonlocal schema, singleton, opened_readers
         if schema is not None:
             return schema
         elif opened_readers is not None:
@@ -193,8 +209,11 @@ def scan_avro(
                 "internal error: schema not set but readers is"
             )
         else:
-            schema, readers = iter_readers(
-                sources, glob=glob, parse_logical_types=convert_logical_types
+            schema, singleton, readers = iter_readers(
+                sources,
+                glob=glob,
+                parse_logical_types=convert_logical_types,
+                single_col_name=single_col_name,
             )
             opened_readers = readers
             return schema
@@ -205,22 +224,28 @@ def scan_avro(
         n_rows: int | None,
         batch_size: int | None,
     ) -> Iterator[pl.DataFrame]:
-        if schema is None:  # pragma: no cover
+        if schema is None or singleton is None:  # pragma: no cover
             raise RuntimeError(
                 "internal error: schema not defined when it needed to be"
             )
         nonlocal opened_readers
         if opened_readers is None:
-            _, readers = iter_readers(
-                sources, glob=glob, parse_logical_types=convert_logical_types
+            _, _, readers = iter_readers(
+                sources,
+                glob=glob,
+                parse_logical_types=convert_logical_types,
+                single_col_name=single_col_name,
             )
         else:
             readers = opened_readers
             opened_readers = None
 
-        for batch in chunk(
-            (rec for reader in readers for rec in reader), batch_size or def_batch_size
-        ):
+        # if we parsed a singleton schema, then wrap to make them records
+        records = (rec for reader in readers for rec in reader)
+        if singleton:
+            records = ({single_col_name: rec} for rec in records)
+
+        for batch in chunk(records, batch_size or def_batch_size):
             lazy = pl.from_dicts(batch, schema).lazy()  # type: ignore
             if with_columns is not None:
                 lazy = lazy.select(with_columns)
@@ -248,8 +273,9 @@ def read_avro(  # noqa: PLR0913
     row_index_offset: int = 0,
     rechunk: bool = False,
     convert_logical_types: bool = False,
-    batch_size: int = 8192,
+    batch_size: int = 32768,
     glob: bool = True,
+    single_col_name: str | None = None,
 ) -> pl.DataFrame:
     """Read an avro file.
 
@@ -266,12 +292,15 @@ def read_avro(  # noqa: PLR0913
         instead.
     batch_size : How many rows to read at a time.
     glob : Whether to interpret glob patterns in files.
+    single_col_name : If not None and the avro schema isn't a record, wrap
+        values in a record with a single field called `single_col_name`.
     """
     lazy = scan_avro(
         sources,
         batch_size=batch_size,
         glob=glob,
         convert_logical_types=convert_logical_types,
+        single_col_name=single_col_name,
     )
     if columns is not None:
         lazy = lazy.select(
