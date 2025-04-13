@@ -275,6 +275,33 @@ def test_timestamp_nanos() -> None:
     assert result.schema == expected
 
 
+def test_singleton_unions() -> None:
+    """Test that we can read timestamps with nanos."""
+    buff = BytesIO()
+    fastavro.writer(  # type: ignore
+        buff,
+        {
+            "type": "record",
+            "name": "schema",
+            "fields": [
+                {
+                    "name": "long",
+                    "type": ["long"],
+                },
+                {
+                    "name": "null",
+                    "type": ["null"],
+                },
+            ],
+        },
+        [{"long": 0, "null": None}],
+    )
+    buff.seek(0)
+    result = read_avro(buff, convert_logical_types=True)
+    expected = pl.Schema([("long", pl.Int64), ("null", pl.Null)])
+    assert result.schema == expected
+
+
 def test_mixed_schema_err() -> None:
     """Test that mixing schemas raises."""
     one = pl.from_dict({"x": [2, 2]})
@@ -325,10 +352,15 @@ def test_invalid_dtype() -> None:
         read_avro(buff)
 
 
-def test_invalid_schema() -> None:
+def test_non_record_schema() -> None:
     """Test that error is thrown on non-record schema."""
     buff = BytesIO()
-    fastavro.writer(buff, "int", [])  # type: ignore
+    fastavro.writer(buff, "int", [3, 7, 4])  # type: ignore
     buff.seek(0)
     with pytest.raises(Exception, match="top-level schema must be a record schema"):
         read_avro(buff)
+
+    buff.seek(0)
+    frame = read_avro(buff, single_col_name="col")
+    expected = pl.from_dict({"col": [3, 7, 4]})
+    assert frames_equal(frame, expected)
