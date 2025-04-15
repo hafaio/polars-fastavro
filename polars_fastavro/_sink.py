@@ -1,5 +1,5 @@
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from os import path
 from pathlib import Path
 from typing import BinaryIO, Literal, TypeAlias
@@ -10,10 +10,22 @@ import polars as pl
 AvroSchema: TypeAlias = str | list["AvroSchema"] | dict[str, "AvroSchema"]
 
 
+@dataclass
+class Counter:
+    val: int = 0
+
+    @property
+    def inc(self) -> int:
+        res = self.val
+        self.val += 1
+        return res
+
+
 @dataclass(frozen=True)
 class DataTypeFormatter:
     promote_ints: bool
     promote_array: bool
+    counter: Counter = field(default_factory=Counter)
 
     def format_dtype(self, dtype: pl.DataType) -> AvroSchema:  # noqa: PLR0911, PLR0912, PLR0915
         formatted: AvroSchema
@@ -57,7 +69,7 @@ class DataTypeFormatter:
             case pl.Enum:
                 formatted = {
                     "type": "enum",
-                    "name": "fastavro_enum",
+                    "name": f"fastavro_enum_{self.counter.inc}",
                     "symbols": dtype.categories.to_list(),
                 }
             case pl.Binary:
@@ -82,7 +94,7 @@ class DataTypeFormatter:
                     )
                 formatted = {
                     "type": "record",
-                    "name": "fastavro_record",
+                    "name": f"fastavro_record_{self.counter.inc}",
                     "fields": fields,
                 }
             case _:
