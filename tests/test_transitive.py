@@ -123,6 +123,32 @@ from .utils import frames_equal
             ),
             id="nested",
         ),
+        pytest.param(
+            pl.from_dict(
+                {
+                    "one": [["a", 1], ["b", 2]],
+                    "two": [[None], [1.0]],
+                },
+                schema={
+                    "one": pl.Struct({"x": pl.String, "y": pl.Int32}),
+                    "two": pl.Struct({"f": pl.Float64}),
+                },
+            ),
+            id="double-struct",
+        ),
+        pytest.param(
+            pl.from_dict(
+                {
+                    "one": ["a", "b"],
+                    "two": ["c", "c"],
+                },
+                schema={
+                    "one": pl.Enum(["a", "b"]),
+                    "two": pl.Enum(["c", "d"]),
+                },
+            ),
+            id="double-enum",
+        ),
     ],
 )
 def test_transitive(frame: pl.DataFrame):
