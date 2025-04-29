@@ -275,6 +275,74 @@ def test_timestamp_nanos() -> None:
     assert result.schema == expected
 
 
+def test_fixed() -> None:
+    """Test that we can read reference types."""
+    buff = BytesIO()
+    fastavro.writer(  # type: ignore
+        buff,
+        {
+            "type": "record",
+            "namespace": "namespace",
+            "name": "schema",
+            "fields": [
+                {
+                    "name": "local",
+                    "type": {
+                        "name": "local",
+                        "type": "fixed",
+                        "size": 4,
+                    },
+                },
+            ],
+        },
+        [{"local": b"0000"}, {"local": b"1234"}],
+    )
+
+    buff.seek(0)
+    result = read_avro(buff)
+    expected = pl.from_dict({"local": [b"0000", b"1234"]})
+    assert frames_equal(result, expected)
+
+
+def test_references() -> None:
+    """Test that we can read reference types."""
+    buff = BytesIO()
+    fastavro.writer(  # type: ignore
+        buff,
+        {
+            "type": "record",
+            "namespace": "namespace",
+            "name": "schema",
+            "fields": [
+                {
+                    "name": "local",
+                    "type": {
+                        "name": "local",
+                        "type": "enum",
+                        "symbols": ["a", "b", "c"],
+                    },
+                },
+                {"name": "duplicate", "type": "namespace.local"},
+            ],
+        },
+        [{"local": "a", "duplicate": "b"}],
+    )
+
+    buff.seek(0)
+    result = read_avro(buff)
+    expected = pl.from_dict(
+        {
+            "local": ["a"],
+            "duplicate": ["b"],
+        },
+        schema={
+            "local": pl.Enum(["a", "b", "c"]),
+            "duplicate": pl.Enum(["a", "b", "c"]),
+        },
+    )
+    assert frames_equal(result, expected)
+
+
 def test_singleton_unions() -> None:
     """Test that we can read timestamps with nanos."""
     buff = BytesIO()
@@ -334,21 +402,19 @@ def test_empty_sources() -> None:
 
 
 def test_invalid_dtype() -> None:
-    """Test that error is thrown on non-record schema."""
+    """Test that error is thrown on records that can't be handled."""
     buff = BytesIO()
     fastavro.writer(  # type: ignore
         buff,
         {
             "type": "record",
             "name": "schema",
-            "fields": [
-                {"name": "field", "type": {"type": "fixed", "name": "fixed", "size": 0}}
-            ],
+            "fields": [{"name": "field", "type": {"type": "map", "values": "long"}}],
         },
         [],
     )
     buff.seek(0)
-    with pytest.raises(Exception, match="unhandled datatype:"):
+    with pytest.raises(Exception, match="unhandled datatype"):
         read_avro(buff)
 
 
