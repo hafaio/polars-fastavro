@@ -106,7 +106,7 @@ class DataTypeParser:
                 resolved = pl.Struct(dict(parsed))
                 self.names[fullname] = resolved
                 return resolved
-            case {"type": str() as reference}:
+            case (str() as reference) | {"type": str() as reference}:
                 resolved = self.names.get(reference)
                 if resolved is None:
                     raise ValueError(f"unhandled datatype: {reference!r}")
