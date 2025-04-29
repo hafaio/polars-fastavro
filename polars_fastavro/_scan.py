@@ -1,6 +1,6 @@
 import glob as libglob
 from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from os import path
 from pathlib import Path
 from typing import BinaryIO, TypeVar
@@ -24,12 +24,24 @@ def unwrap_nullable(schema: object) -> object:
             return schema
 
 
+def resolve_name(namespace: str | None, name: str) -> tuple[str | None, str]:
+    """Resolve the namespace and the full name."""
+    match name.rsplit(".", 1):
+        case [namespace, _]:
+            return namespace, name
+        case [_]:
+            fullname = name if namespace is None else f"{namespace}.{name}"
+            return namespace, fullname
+        case _:  # pragma: no cover
+            raise RuntimeError("unreachable")
+
+
 @dataclass(frozen=True)
 class DataTypeParser:
     parse_logical_types: bool
-    single_col_name: str | None
+    names: dict[str, pl.DataType] = field(default_factory=dict)
 
-    def parse_dtype(self, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912
+    def parse_dtype(self, namespace: str | None, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912
         match unwrap_nullable(dtype):
             case {"type": "long", "logicalType": "timestamp-millis"}:
                 return pl.Datetime("ms", "UTC")
@@ -50,59 +62,76 @@ class DataTypeParser:
                 "logicalType": str(),
             } if not self.parse_logical_types:
                 raise ValueError(f"tried to parse {dtype} without logical-type parsing")
-            case "null":
+            case "null" | {"type": "null"}:
                 return pl.Null()
-            case "boolean":
+            case "boolean" | {"type": "boolean"}:
                 return pl.Boolean()
             case "int" | {"type": "int"}:
                 return pl.Int32()
             case "long" | {"type": "long"}:
                 return pl.Int64()
-            case "float":
+            case "float" | {"type": "float"}:
                 return pl.Float32()
-            case "double":
+            case "double" | {"type": "double"}:
                 return pl.Float64()
-            case {
-                "type": "enum",
-                "symbols": [*_] as symbs,  # type: ignore
-            }:
-                return pl.Enum(symbs)  # type: ignore
+            case {"type": "enum", "name": str() as name, "symbols": [*_] as symbols}:
+                _, fullname = resolve_name(namespace, name)
+                resolved = pl.Enum(symbols)
+                self.names[fullname] = resolved
+                return resolved
             case "bytes" | {"type": "bytes"}:
                 return pl.Binary()
             case "string" | {"type": "string"}:
                 return pl.String()
             case {"type": "array", "items": object() as inner}:
-                return pl.List(self.parse_dtype(inner))
-            case {"type": "record", "fields": [*_] as fields}:  # type: ignore
+                return pl.List(self.parse_dtype(namespace, inner))
+            case {"type": "fixed", "name": str() as name, "size": int()}:
+                _, fullname = resolve_name(namespace, name)
+                resolved = pl.Binary()
+                self.names[fullname] = resolved
+                return resolved
+            case {"type": "record", "name": str() as name, "fields": [*_] as fields}:
+                new_namespace, fullname = resolve_name(namespace, name)
                 parsed: list[tuple[str, pl.DataType]] = []
-                for field in fields:  # type: ignore
-                    match field:
+                for obj in fields:
+                    match obj:
+                        case {"name": str() as name, "type": str()}:
+                            parsed.append((name, self.parse_dtype(new_namespace, obj)))
                         case {"name": str() as name, "type": object() as dtype}:
-                            parsed.append((name, self.parse_dtype(dtype)))
+                            parsed.append(
+                                (name, self.parse_dtype(new_namespace, dtype))
+                            )
                         case _:  # pragma: no cover
-                            raise RuntimeError(f"invalid field definition: {field}")
-                return pl.Struct(dict(parsed))
-            case unwrapped:
+                            raise RuntimeError(f"invalid field definition: {obj}")
+                resolved = pl.Struct(dict(parsed))
+                self.names[fullname] = resolved
+                return resolved
+            case {"type": str() as reference}:
+                resolved = self.names.get(reference)
+                if resolved is None:
+                    raise ValueError(f"unhandled datatype: {reference!r}")
+                else:
+                    return resolved
+            case unwrapped:  # pragma: no cover
                 raise NotImplementedError(f"unhandled datatype: {unwrapped}")
 
-    def parse_schema(self, schema: object) -> tuple[pl.Schema, bool]:
-        match schema:
-            case {"type": "record", "fields": [*_] as fields}:  # type: ignore
-                parsed: list[tuple[str, pl.DataType]] = []
-                for field in fields:  # type: ignore
-                    match field:
-                        case {"name": str() as name, "type": object() as dtype}:
-                            parsed.append((name, self.parse_dtype(dtype)))
-                        case _:  # pragma: no cover
-                            raise RuntimeError(f"invalid field definition: {field}")
-                return pl.Schema(parsed), False
-            case _ if self.single_col_name is not None:
-                col_dtype = self.parse_dtype(schema)
-                return pl.Schema([(self.single_col_name, col_dtype)]), True
-            case _:
-                raise NotImplementedError(
-                    f"top-level schema must be a record schema: {schema}"
-                )
+
+def parse_schema(
+    schema: object, *, parse_logical_types: bool, single_col_name: str | None
+) -> tuple[pl.Schema, bool]:
+    dtype = DataTypeParser(parse_logical_types=parse_logical_types).parse_dtype(
+        None, schema
+    )
+
+    match dtype:
+        case pl.Struct():
+            return pl.Schema([*dtype]), False
+        case _ if single_col_name is not None:
+            return pl.Schema([(single_col_name, dtype)]), True
+        case _:
+            raise NotImplementedError(
+                f"top-level schema must be a record schema: {schema}"
+            )
 
 
 def open_sources(
@@ -139,18 +168,22 @@ def iter_readers(
     if (first := next(source_iter, None)) is None:
         raise ValueError("sources were empty")
 
-    parser = DataTypeParser(
-        parse_logical_types=parse_logical_types, single_col_name=single_col_name
-    )
-
     reader = fastavro.reader(first)
-    schema, singleton = parser.parse_schema(reader.writer_schema)
+    schema, singleton = parse_schema(
+        reader.writer_schema,
+        parse_logical_types=parse_logical_types,
+        single_col_name=single_col_name,
+    )
 
     def rest() -> Iterator[Iterable[object]]:
         yield reader
         for i, fo in enumerate(source_iter, 1):
             next_reader = fastavro.reader(fo)
-            new_schema, new_single = parser.parse_schema(next_reader.writer_schema)
+            new_schema, new_single = parse_schema(
+                next_reader.writer_schema,
+                parse_logical_types=parse_logical_types,
+                single_col_name=single_col_name,
+            )
             if new_schema == schema and singleton == new_single:
                 yield next_reader
             else:
