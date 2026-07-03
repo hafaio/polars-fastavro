@@ -175,7 +175,7 @@ def test_noncontiguous_chunks(
     read_func: Callable[[BytesIO], pl.DataFrame],
 ) -> None:
     """Test that non contiguous arrays can be written and read."""
-    frame = pl.concat(
+    frame = pl.concat(  # pyright: ignore[reportUnknownMemberType]
         [
             pl.from_dict({"split": [*range(3)]}),
             pl.from_dict({"split": [*range(3, 6)]}),
