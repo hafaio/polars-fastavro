@@ -41,7 +41,7 @@ class DataTypeParser:
     parse_logical_types: bool
     names: dict[str, pl.DataType] = field(default_factory=dict)
 
-    def parse_dtype(self, namespace: str | None, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912
+    def parse_dtype(self, namespace: str | None, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912, PLR0915
         match unwrap_nullable(dtype):
             case {"type": "long", "logicalType": "timestamp-millis"}:
                 return pl.Datetime("ms", "UTC")
@@ -57,8 +57,38 @@ class DataTypeParser:
                 return pl.Datetime("ns", None)
             case {"type": "int", "logicalType": "date"}:
                 return pl.Date()
+            case {"type": "int", "logicalType": "time-millis"}:
+                return pl.Time()
+            case {"type": "long", "logicalType": "time-micros"}:
+                return pl.Time()
+            case (
+                {
+                    "type": "bytes" | "fixed",
+                    "logicalType": "decimal",
+                    "precision": int() as precision,
+                } as decimal_schema
+            ):
+                match decimal_schema:
+                    case {"scale": int() as parsed_scale}:
+                        scale = parsed_scale
+                    case _:
+                        scale = 0
+                resolved = pl.Decimal(precision, scale)
+                # fixed-decimal is a named type that can be referenced elsewhere
+                match decimal_schema:
+                    case {"name": str() as name}:
+                        _, fullname = resolve_name(namespace, name)
+                        self.names[fullname] = resolved
+                    case _:
+                        pass
+                return resolved
+            case {"type": "string", "logicalType": "uuid"}:
+                # polars has no uuid dtype, and fastavro decodes the physical
+                # string into uuid.UUID objects that a String column rejects, so
+                # there's no representation to fall back to
+                raise ValueError("the uuid logical type is not supported")
             case {
-                "type": "int" | "long" | "bytes" | "string",
+                "type": "int" | "long" | "bytes" | "string" | "fixed",
                 "logicalType": str(),
             } if not self.parse_logical_types:
                 raise ValueError(f"tried to parse {dtype} without logical-type parsing")

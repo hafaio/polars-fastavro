@@ -1,6 +1,9 @@
 """Test scan functionality."""
 
+from datetime import time
+from decimal import Decimal
 from io import BytesIO
+from uuid import UUID
 
 import fastavro
 import polars as pl
@@ -193,7 +196,7 @@ def test_read_options() -> None:
 
 
 def test_logical_types() -> None:
-    """Test that we can read physical types."""
+    """Test that logical types are read as their native polars types."""
     buff = BytesIO()
     fastavro.writer(  # type: ignore
         buff,
@@ -202,12 +205,32 @@ def test_logical_types() -> None:
             "name": "schema",
             "fields": [
                 {
-                    "name": "decimal",
+                    "name": "decimal_bytes",
                     "type": {
                         "type": "bytes",
                         "logicalType": "decimal",
-                        "precision": 1,
-                        "scale": 1,
+                        "precision": 6,
+                        "scale": 2,
+                    },
+                },
+                {
+                    "name": "decimal_fixed",
+                    "type": {
+                        "type": "fixed",
+                        "name": "decimal_fixed",
+                        "size": 8,
+                        "logicalType": "decimal",
+                        "precision": 6,
+                        "scale": 2,
+                    },
+                },
+                {
+                    # scale omitted; avro defaults it to 0
+                    "name": "decimal_noscale",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 4,
                     },
                 },
                 {
@@ -226,18 +249,91 @@ def test_logical_types() -> None:
                 },
             ],
         },
-        [{"decimal": b"decimal", "time-ms": 1, "time-us": 2}],
+        [
+            {
+                "decimal_bytes": Decimal("12.34"),
+                "decimal_fixed": Decimal("-5.60"),
+                "decimal_noscale": Decimal("42"),
+                "time-ms": time(1, 2, 3),
+                "time-us": time(4, 5, 6),
+            }
+        ],
     )
     buff.seek(0)
-    result = read_avro(buff, convert_logical_types=True)
-    expected = pl.Schema(
-        [("decimal", pl.Binary), ("time-ms", pl.Int32), ("time-us", pl.Int64)]
+    result = read_avro(buff)
+    expected = pl.from_dict(
+        {
+            "decimal_bytes": [Decimal("12.34")],
+            "decimal_fixed": [Decimal("-5.60")],
+            "decimal_noscale": [Decimal("42")],
+            "time-ms": [time(1, 2, 3)],
+            "time-us": [time(4, 5, 6)],
+        },
+        schema={
+            "decimal_bytes": pl.Decimal(6, 2),
+            "decimal_fixed": pl.Decimal(6, 2),
+            "decimal_noscale": pl.Decimal(4, 0),
+            "time-ms": pl.Time,
+            "time-us": pl.Time,
+        },
     )
-    assert result.schema == expected
+    assert frames_equal(result, expected)
 
+
+def test_uuid_unsupported() -> None:
+    """Test that the uuid logical type raises rather than being converted."""
+    buff = BytesIO()
+    fastavro.writer(  # type: ignore
+        buff,
+        {
+            "type": "record",
+            "name": "schema",
+            "fields": [
+                {
+                    "name": "uuid",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                },
+            ],
+        },
+        [{"uuid": UUID("12345678-1234-5678-1234-567812345678")}],
+    )
+    buff.seek(0)
+    with pytest.raises(Exception, match="uuid logical type is not supported"):
+        read_avro(buff)
+
+    buff.seek(0)
+    with pytest.raises(Exception, match="uuid logical type is not supported"):
+        read_avro(buff, convert_logical_types=True)
+
+
+def test_unsupported_logical_type() -> None:
+    """Test physical fallback for logical types with no polars equivalent."""
+    buff = BytesIO()
+    fastavro.writer(  # type: ignore
+        buff,
+        {
+            "type": "record",
+            "name": "schema",
+            "fields": [
+                {
+                    "name": "custom",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "not-a-real-logical-type",
+                    },
+                },
+            ],
+        },
+        [{"custom": b"raw"}],
+    )
     buff.seek(0)
     with pytest.raises(Exception, match="without logical-type parsing"):
         read_avro(buff)
+
+    buff.seek(0)
+    result = read_avro(buff, convert_logical_types=True)
+    expected = pl.from_dict({"custom": [b"raw"]}, schema={"custom": pl.Binary})
+    assert frames_equal(result, expected)
 
 
 def test_timestamp_nanos() -> None:
