@@ -93,7 +93,7 @@ def test_int_promotion() -> None:
     )
     write_avro(frame, buff)
     buff.seek(0)
-    promoted = frame.select(
+    promoted = frame.select(  # pyright: ignore[reportUnknownMemberType]
         pl.col("i8").cast(pl.Int32),
         pl.col("i16").cast(pl.Int32),
         pl.col("u8").cast(pl.Int32),
@@ -121,7 +121,7 @@ def test_array_promotion() -> None:
     write_avro(frame, buff)
     buff.seek(0)
     dup = read_avro(buff)
-    assert frames_equal(dup, frame.select(x=pl.col("x").arr.to_list()))
+    assert frames_equal(dup, frame.select(x=pl.col("x").arr.to_list()))  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_no_array_promotion() -> None:

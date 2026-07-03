@@ -39,7 +39,7 @@ def test_scan_avro() -> None:
 def test_projection_pushdown_avro() -> None:
     """Test that projection is pushed down to scan."""
     file_path = "resources/food.avro"
-    lazy = scan_avro(file_path).select(pl.col.calories)
+    lazy = scan_avro(file_path).select(pl.col.calories)  # pyright: ignore[reportUnknownMemberType]
 
     explain = lazy.explain()
 
