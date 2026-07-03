@@ -126,9 +126,11 @@ def write_avro(  # noqa: PLR0913
     ----------
     frame : The DataFrame to write.
     dest : Where to write the frame to.
+    batch_size : If not None, rechunk and write the frame in batches of this
+        many rows at a time.
     promote_ints : Whether to promote ints to a large size that avro supports.
-    promote_arrays : Whether to write Arrays as Lists.
-    coded : Codec for dest.
+    promote_array : Whether to write Arrays as Lists.
+    codec : Codec for dest.
     """
     schema = DataTypeFormatter(
         promote_ints=promote_ints,
