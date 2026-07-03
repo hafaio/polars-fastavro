@@ -147,7 +147,7 @@ def write_avro(  # noqa: PLR0913
                 frame[i : i + batch_size].rechunk()
                 for i in range(0, len(frame), batch_size)
             ]
-        fastavro.writer(
+        fastavro.writer(  # pyright: ignore[reportUnknownMemberType]
             fo,
             schema,
             (row for frame in frames for row in frame.iter_rows(named=True)),

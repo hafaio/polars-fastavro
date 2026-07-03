@@ -39,7 +39,7 @@ def resolve_name(namespace: str | None, name: str) -> tuple[str | None, str]:
 @dataclass(frozen=True)
 class DataTypeParser:
     parse_logical_types: bool
-    names: dict[str, pl.DataType] = field(default_factory=dict)
+    names: dict[str, pl.DataType] = field(default_factory=dict)  # pyright: ignore[reportUnknownVariableType]
 
     def parse_dtype(self, namespace: str | None, dtype: object) -> pl.DataType:  # noqa: PLR0911, PLR0912, PLR0915
         match unwrap_nullable(dtype):
@@ -104,9 +104,9 @@ class DataTypeParser:
                 return pl.Float32()
             case "double" | {"type": "double"}:
                 return pl.Float64()
-            case {"type": "enum", "name": str() as name, "symbols": [*_] as symbols}:
+            case {"type": "enum", "name": str() as name, "symbols": [*_] as symbols}:  # pyright: ignore[reportUnknownVariableType]
                 _, fullname = resolve_name(namespace, name)
-                resolved = pl.Enum(symbols)
+                resolved = pl.Enum(symbols)  # pyright: ignore[reportUnknownArgumentType]
                 self.names[fullname] = resolved
                 return resolved
             case "bytes" | {"type": "bytes"}:
@@ -120,18 +120,18 @@ class DataTypeParser:
                 resolved = pl.Binary()
                 self.names[fullname] = resolved
                 return resolved
-            case {"type": "record", "name": str() as name, "fields": [*_] as fields}:
+            case {"type": "record", "name": str() as name, "fields": [*_] as fields}:  # pyright: ignore[reportUnknownVariableType]
                 new_namespace, fullname = resolve_name(namespace, name)
                 parsed: list[tuple[str, pl.DataType]] = []
-                for obj in fields:
+                for obj in fields:  # pyright: ignore[reportUnknownVariableType]
                     match obj:
                         case {"name": str() as name, "type": str()}:
-                            parsed.append((name, self.parse_dtype(new_namespace, obj)))
+                            parsed.append((name, self.parse_dtype(new_namespace, obj)))  # pyright: ignore[reportUnknownArgumentType]
                         case {"name": str() as name, "type": object() as dtype}:
                             parsed.append(
                                 (name, self.parse_dtype(new_namespace, dtype))
                             )
-                        case _:  # pragma: no cover
+                        case _:  # pragma: no cover  # pyright: ignore[reportUnknownVariableType]
                             raise RuntimeError(f"invalid field definition: {obj}")
                 resolved = pl.Struct(dict(parsed))
                 self.names[fullname] = resolved
@@ -311,7 +311,7 @@ def scan_avro(
         for batch in chunk(records, batch_size or def_batch_size):
             lazy = pl.from_dicts(batch, schema).lazy()  # type: ignore
             if with_columns is not None:
-                lazy = lazy.select(with_columns)
+                lazy = lazy.select(with_columns)  # pyright: ignore[reportUnknownMemberType]
             if predicate is not None:
                 lazy = lazy.filter(predicate)  # type: ignore
             frame = lazy.collect()
@@ -370,7 +370,7 @@ def read_avro(  # noqa: PLR0913
         single_col_name=single_col_name,
     )
     if columns is not None:
-        lazy = lazy.select(
+        lazy = lazy.select(  # pyright: ignore[reportUnknownMemberType]
             [pl.nth(c) if isinstance(c, int) else pl.col(c) for c in columns]
         )
     if row_index_name is not None:

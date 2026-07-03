@@ -31,7 +31,7 @@ convention = "numpy"
 addopts = "--cov --cov-report term-missing"
 
 [tool.pyright]
-strict = ["polars_avro", "tests"]
+strict = ["polars_fastavro", "tests"]
 
 [tool.uv]
 keyring-provider = "subprocess"
