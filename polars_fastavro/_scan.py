@@ -352,7 +352,7 @@ def read_avro(  # noqa: PLR0913
     columns : Columns to select from the read sources.
     n_rows : The maximum number of rows to read.
     row_index_name : If not None, the name to assign as a row index.
-    row_index_offset : Where to position the row index column.
+    row_index_offset : The starting value for the row index.
     rechunk : Whether to rechunk the frame so it's contiguous.
     convert_logical_types : If true, logical types that can't be parsed, but are
         backed by physical types that can will be parsed as those physical types
