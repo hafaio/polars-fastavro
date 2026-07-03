@@ -1,6 +1,6 @@
 [project]
 name = "polars-fastavro"
-version = "0.5.0"
+version = "0.5.1"
 description = "A polars io-plugin wrapper around fastavro"
 readme = "README.md"
 requires-python = ">=3.10"
