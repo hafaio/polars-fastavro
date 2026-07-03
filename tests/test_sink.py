@@ -6,10 +6,9 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from polars_fastavro import read_avro, write_avro
-
-from .utils import frames_equal
 
 
 def test_binary_write() -> None:
@@ -19,7 +18,7 @@ def test_binary_write() -> None:
     write_avro(frame, buff)
     buff.seek(0)
     duplicate = read_avro(buff)
-    assert frames_equal(frame, duplicate)
+    assert_frame_equal(frame, duplicate)
 
 
 def test_chunked_binary_write() -> None:
@@ -29,7 +28,7 @@ def test_chunked_binary_write() -> None:
     write_avro(frame, buff, batch_size=1)
     buff.seek(0)
     duplicate = read_avro(buff)
-    assert frames_equal(frame, duplicate)
+    assert_frame_equal(frame, duplicate)
 
 
 def test_empty_write() -> None:
@@ -39,7 +38,7 @@ def test_empty_write() -> None:
     write_avro(frame, buff)
     buff.seek(0)
     duplicate = read_avro(buff)
-    assert frames_equal(frame, duplicate)
+    assert_frame_equal(frame, duplicate)
 
 
 def test_struct_write() -> None:
@@ -59,7 +58,7 @@ def test_struct_write() -> None:
     write_avro(frame, buff)
     buff.seek(0)
     duplicate = read_avro(buff)
-    assert frames_equal(frame, duplicate)
+    assert_frame_equal(frame, duplicate)
 
 
 def test_file_write(tmp_path: Path) -> None:
@@ -69,7 +68,7 @@ def test_file_write(tmp_path: Path) -> None:
     frame = pl.from_dict({"x": [1]})
     write_avro(frame, path)
     duplicate = read_avro(path)
-    assert frames_equal(frame, duplicate)
+    assert_frame_equal(frame, duplicate)
 
 
 def test_int_promotion() -> None:
@@ -101,7 +100,7 @@ def test_int_promotion() -> None:
         pl.col("u32").cast(pl.Int64),
     )
     dup = read_avro(buff)
-    assert frames_equal(dup, promoted)
+    assert_frame_equal(dup, promoted)
 
 
 def test_no_int_promotion() -> None:
@@ -121,7 +120,7 @@ def test_array_promotion() -> None:
     write_avro(frame, buff)
     buff.seek(0)
     dup = read_avro(buff)
-    assert frames_equal(dup, frame.select(x=pl.col("x").arr.to_list()))  # pyright: ignore[reportUnknownMemberType]
+    assert_frame_equal(dup, frame.select(x=pl.col("x").arr.to_list()))  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_no_array_promotion() -> None:

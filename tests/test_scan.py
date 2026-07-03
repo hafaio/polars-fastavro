@@ -8,10 +8,9 @@ from uuid import UUID
 import fastavro
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from polars_fastavro import read_avro, scan_avro, write_avro
-
-from .utils import frames_equal
 
 
 def test_scan_avro() -> None:
@@ -47,8 +46,8 @@ def test_projection_pushdown_avro() -> None:
     assert "PROJECT 1/4 COLUMNS" in explain
 
     normal = lazy.collect()
-    unoptimized = lazy.collect(no_optimization=True)
-    assert frames_equal(normal, unoptimized)
+    unoptimized = lazy.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(normal, unoptimized)
 
 
 def test_predicate_pushdown_avro() -> None:
@@ -63,8 +62,8 @@ def test_predicate_pushdown_avro() -> None:
     assert """SELECTION: [(col("calories")) > (80)]""" in explain
 
     normal = lazy.collect()
-    unoptimized = lazy.collect(no_optimization=True)
-    assert frames_equal(normal, unoptimized)
+    unoptimized = lazy.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(normal, unoptimized)
 
 
 def test_glob_n_rows() -> None:
@@ -93,7 +92,7 @@ def test_many_files() -> None:
     buffs = [BytesIO(buff.getvalue()) for _ in range(1023)]
     res = scan_avro(buffs).collect()
     reference = pl.from_dict({"x": [5, 12, 14] * 1023})
-    assert frames_equal(res, reference)
+    assert_frame_equal(res, reference)
 
 
 def test_scan_nrows_empty() -> None:
@@ -101,7 +100,7 @@ def test_scan_nrows_empty() -> None:
     file_path = "resources/food.avro"
     frame = scan_avro(file_path).head(0).collect()
     reference = read_avro(file_path).head(0)
-    assert frames_equal(frame, reference)
+    assert_frame_equal(frame, reference)
 
 
 def test_scan_filter_empty() -> None:
@@ -109,7 +108,7 @@ def test_scan_filter_empty() -> None:
     file_path = "resources/food.avro"
     frame = scan_avro(file_path).filter(pl.col("category") == "empty").collect()  # type: ignore
     reference = read_avro(file_path).filter(pl.col("category") == "empty")  # type: ignore
-    assert frames_equal(frame, reference)
+    assert_frame_equal(frame, reference)
 
 
 def test_avro_list_arg() -> None:
@@ -142,31 +141,31 @@ def test_scan_in_memory() -> None:
 
     buff.seek(0)
     scanned = scan_avro(buff).collect()
-    assert frames_equal(frame, scanned)
+    assert_frame_equal(frame, scanned)
 
     buff.seek(0)
     scanned = scan_avro(buff).slice(1, 2).collect()
-    assert frames_equal(frame.slice(1, 2), scanned)
+    assert_frame_equal(frame.slice(1, 2), scanned)
 
     buff.seek(0)
     scanned = scan_avro(buff).slice(-1, 1).collect()
-    assert frames_equal(frame.slice(-1, 1), scanned)
+    assert_frame_equal(frame.slice(-1, 1), scanned)
 
     other = BytesIO(buff.getvalue())
 
     buff.seek(0)
     scanned = scan_avro([buff, other]).collect()
-    assert frames_equal(pl.concat([frame, frame]), scanned)
+    assert_frame_equal(pl.concat([frame, frame]), scanned)
 
     buff.seek(0)
     other.seek(0)
     scanned = scan_avro([buff, other]).slice(1, 3).collect()
-    assert frames_equal(pl.concat([frame, frame]).slice(1, 3), scanned)
+    assert_frame_equal(pl.concat([frame, frame]).slice(1, 3), scanned)
 
     buff.seek(0)
     other.seek(0)
     scanned = scan_avro([buff, other]).slice(-4, 3).collect()
-    assert frames_equal(pl.concat([frame, frame]).slice(-4, 3), scanned)
+    assert_frame_equal(pl.concat([frame, frame]).slice(-4, 3), scanned)
 
 
 def test_large_scan(num: int = 200_000) -> None:
@@ -183,7 +182,7 @@ def test_large_scan(num: int = 200_000) -> None:
         .collect()
     )
     expected = pl.from_dict({"col": [*range(limit)], "other": [*range(limit)]})
-    assert frames_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_read_options() -> None:
@@ -277,7 +276,7 @@ def test_logical_types() -> None:
             "time-us": pl.Time,
         },
     )
-    assert frames_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_uuid_unsupported() -> None:
@@ -333,7 +332,7 @@ def test_unsupported_logical_type() -> None:
     buff.seek(0)
     result = read_avro(buff, convert_logical_types=True)
     expected = pl.from_dict({"custom": [b"raw"]}, schema={"custom": pl.Binary})
-    assert frames_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_timestamp_nanos() -> None:
@@ -397,7 +396,7 @@ def test_fixed() -> None:
     buff.seek(0)
     result = read_avro(buff)
     expected = pl.from_dict({"local": [b"0000", b"1234"]})
-    assert frames_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_references() -> None:
@@ -436,7 +435,7 @@ def test_references() -> None:
             "duplicate": pl.Enum(["a", "b", "c"]),
         },
     )
-    assert frames_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_singleton_unions() -> None:
@@ -524,5 +523,5 @@ def test_non_record_schema() -> None:
 
     buff.seek(0)
     frame = read_avro(buff, single_col_name="col")
-    expected = pl.from_dict({"col": [3, 7, 4]})
-    assert frames_equal(frame, expected)
+    expected = pl.from_dict({"col": [3, 7, 4]}, schema={"col": pl.Int32})
+    assert_frame_equal(frame, expected)

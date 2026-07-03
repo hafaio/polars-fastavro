@@ -6,10 +6,9 @@ from io import BytesIO
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from polars_fastavro import read_avro, write_avro
-
-from .utils import frames_equal
 
 
 @pytest.mark.parametrize(
@@ -158,7 +157,7 @@ def test_transitive(frame: pl.DataFrame):
     buff.seek(0)
     dup = read_avro(buff)
 
-    assert frames_equal(frame, dup)
+    assert_frame_equal(frame, dup)
 
 
 @pytest.mark.parametrize(
@@ -186,7 +185,7 @@ def test_noncontiguous_chunks(
     write_func(frame, buff)
     buff.seek(0)
     dup = read_func(buff)
-    assert frames_equal(frame, dup)
+    assert_frame_equal(frame, dup)
 
 
 @pytest.mark.parametrize(
@@ -214,4 +213,4 @@ def test_noncontiguous_arrays(
     write_func(frame, buff)
     buff.seek(0)
     dup = read_func(buff)
-    assert frames_equal(frame, dup)
+    assert_frame_equal(frame, dup)
