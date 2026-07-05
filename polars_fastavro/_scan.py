@@ -309,11 +309,11 @@ def scan_avro(
             records = ({single_col_name: rec} for rec in records)
 
         for batch in chunk(records, batch_size or def_batch_size):
-            lazy = pl.from_dicts(batch, schema).lazy()  # type: ignore
+            lazy = pl.from_dicts(batch, schema).lazy()  # pyright: ignore[reportArgumentType]
             if with_columns is not None:
                 lazy = lazy.select(with_columns)  # pyright: ignore[reportUnknownMemberType]
             if predicate is not None:
-                lazy = lazy.filter(predicate)  # type: ignore
+                lazy = lazy.filter(predicate)  # pyright: ignore[reportUnknownMemberType]
             frame = lazy.collect()
             if n_rows is None:
                 yield frame
