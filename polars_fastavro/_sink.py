@@ -79,18 +79,18 @@ class DataTypeFormatter:
             case pl.List:
                 formatted = {
                     "type": "array",
-                    "items": self.format_dtype(dtype.inner),  # type: ignore
+                    "items": self.format_dtype(dtype.inner),  # pyright: ignore[reportArgumentType]
                 }
             case pl.Array if self.promote_array:
                 formatted = {
                     "type": "array",
-                    "items": self.format_dtype(dtype.inner),  # type: ignore
+                    "items": self.format_dtype(dtype.inner),  # pyright: ignore[reportArgumentType]
                 }
             case pl.Struct:
                 fields: list[AvroSchema] = []
                 for field in dtype.fields:
                     fields.append(
-                        {"name": field.name, "type": self.format_dtype(field.dtype)}  # type: ignore
+                        {"name": field.name, "type": self.format_dtype(field.dtype)}  # pyright: ignore[reportArgumentType]
                     )
                 formatted = {
                     "type": "record",
