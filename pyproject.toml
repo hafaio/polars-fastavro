@@ -5,6 +5,12 @@ description = "A polars io-plugin wrapper around fastavro"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["fastavro>=1.9.0", "polars>=1.32.0"]
+keywords = ["polars", "avro", "fastavro", "io-plugin", "arrow"]
+
+[project.urls]
+homepage = "https://hafaio.github.io/polars-fastavro"
+documentation = "https://hafaio.github.io/polars-fastavro"
+repository = "https://github.com/hafaio/polars-fastavro"
 
 [dependency-groups]
 dev = [
