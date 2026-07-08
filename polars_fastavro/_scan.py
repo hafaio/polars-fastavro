@@ -61,13 +61,11 @@ class DataTypeParser:
                 return pl.Time()
             case {"type": "long", "logicalType": "time-micros"}:
                 return pl.Time()
-            case (
-                {
-                    "type": "bytes" | "fixed",
-                    "logicalType": "decimal",
-                    "precision": int() as precision,
-                } as decimal_schema
-            ):
+            case {
+                "type": "bytes" | "fixed",
+                "logicalType": "decimal",
+                "precision": int() as precision,
+            } as decimal_schema:
                 match decimal_schema:
                     case {"scale": int() as parsed_scale}:
                         scale = parsed_scale
