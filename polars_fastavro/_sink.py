@@ -27,7 +27,7 @@ class DataTypeFormatter:
     promote_array: bool
     counter: Counter = field(default_factory=Counter)
 
-    def format_dtype(self, dtype: pl.DataType) -> AvroSchema:  # noqa: PLR0911, PLR0912, PLR0915
+    def format_dtype(self, dtype: pl.DataType) -> AvroSchema:  # noqa: PLR0912
         formatted: AvroSchema
         match dtype:
             case pl.Null:

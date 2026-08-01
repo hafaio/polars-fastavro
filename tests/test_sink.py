@@ -1,6 +1,6 @@
 """Test write functionality."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -134,12 +134,11 @@ def test_no_array_promotion() -> None:
 def test_invalid_datetime() -> None:
     """Test that exception is raised for invalid Datetime."""
     buff = BytesIO()
-    frame = pl.from_dict({"x": [datetime.now()]}, schema={"x": pl.Datetime("ns")})
+    instant = datetime(2020, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    frame = pl.from_dict({"x": [instant]}, schema={"x": pl.Datetime("ns")})
     with pytest.raises(Exception, match="unsupported dtype: Datetime"):
         write_avro(frame, buff)
 
-    frame = pl.from_dict(
-        {"x": [datetime.now()]}, schema={"x": pl.Datetime("us", "GMT")}
-    )
+    frame = pl.from_dict({"x": [instant]}, schema={"x": pl.Datetime("us", "GMT")})
     with pytest.raises(Exception, match="unsupported dtype: Datetime"):
         write_avro(frame, buff)

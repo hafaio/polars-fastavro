@@ -34,4 +34,4 @@ Limitations
 from ._scan import read_avro, scan_avro
 from ._sink import write_avro
 
-__all__ = ("scan_avro", "read_avro", "write_avro")
+__all__ = ("read_avro", "scan_avro", "write_avro")
