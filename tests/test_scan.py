@@ -59,7 +59,7 @@ def test_predicate_pushdown_avro() -> None:
     explain = lazy.explain()
 
     assert "FILTER" not in explain
-    assert """SELECTION: [(col("calories")) > (80)]""" in explain
+    assert """SELECTION: col("calories") > 80""" in explain
 
     normal = lazy.collect()
     unoptimized = lazy.collect(optimizations=pl.QueryOptFlags.none())
@@ -252,7 +252,7 @@ def test_logical_types() -> None:
             {
                 "decimal_bytes": Decimal("12.34"),
                 "decimal_fixed": Decimal("-5.60"),
-                "decimal_noscale": Decimal("42"),
+                "decimal_noscale": Decimal(42),
                 "time-ms": time(1, 2, 3),
                 "time-us": time(4, 5, 6),
             }
@@ -264,7 +264,7 @@ def test_logical_types() -> None:
         {
             "decimal_bytes": [Decimal("12.34")],
             "decimal_fixed": [Decimal("-5.60")],
-            "decimal_noscale": [Decimal("42")],
+            "decimal_noscale": [Decimal(42)],
             "time-ms": [time(1, 2, 3)],
             "time-us": [time(4, 5, 6)],
         },

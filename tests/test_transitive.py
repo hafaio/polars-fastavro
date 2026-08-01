@@ -1,7 +1,7 @@
 """Test transitive property for writing and reading in a DataFrame."""
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 
 import polars as pl
@@ -9,6 +9,10 @@ import pytest
 from polars.testing import assert_frame_equal
 
 from polars_fastavro import read_avro, write_avro
+
+# fixed sample values; only the schema dtype matters for these round trips
+_DATE = date(2020, 1, 2)
+_DATETIME = datetime(2020, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
 
 
 @pytest.mark.parametrize(
@@ -31,33 +35,33 @@ from polars_fastavro import read_avro, write_avro
             id="longs",
         ),
         pytest.param(
-            pl.from_dict({"col": [date.today(), None]}, schema={"col": pl.Date}),
+            pl.from_dict({"col": [_DATE, None]}, schema={"col": pl.Date}),
             id="dates",
         ),
         pytest.param(
             pl.from_dict(
-                {"col": [datetime.now(), None]},
+                {"col": [_DATETIME, None]},
                 schema={"col": pl.Datetime("ms", "UTC")},
             ),
             id="datetime-ms",
         ),
         pytest.param(
             pl.from_dict(
-                {"col": [datetime.now(), None]},
+                {"col": [_DATETIME, None]},
                 schema={"col": pl.Datetime("us", "UTC")},
             ),
             id="datetime-us",
         ),
         pytest.param(
             pl.from_dict(
-                {"col": [datetime.now(), None]},
+                {"col": [_DATETIME, None]},
                 schema={"col": pl.Datetime("ms")},
             ),
             id="datetime-ms-local",
         ),
         pytest.param(
             pl.from_dict(
-                {"col": [datetime.now(), None]},
+                {"col": [_DATETIME, None]},
                 schema={"col": pl.Datetime("us")},
             ),
             id="datetime-us-local",
